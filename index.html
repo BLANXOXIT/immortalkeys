@@ -886,6 +886,10 @@
           <span class="icon">⬇</span> Loader
           <span class="nav-badge" id="navLoaderBadge" style="display:none;background:rgba(16,185,129,0.15);color:var(--green);border-color:rgba(16,185,129,0.25);">✓</span>
         </div>
+        <div class="nav-item" onclick="showTab('reseller')" id="nav-reseller" style="display:none;">
+          <span class="icon">🤝</span> Reseller
+          <span class="nav-badge" id="navResellerBadge" style="display:none;background:rgba(6,182,212,0.15);color:var(--accent3);border-color:rgba(6,182,212,0.25);">✓</span>
+        </div>
       </div>
       <div class="nav-section">
         <div class="nav-label">Security</div>
@@ -1359,6 +1363,56 @@
         </div>
       </div>
 
+      <!-- RESELLER -->
+      <div class="panel" id="panel-reseller">
+        <div class="panel-header">
+          <div class="panel-title">🤝 <span>Reseller</span></div>
+          <button class="btn btn-sm" onclick="checkResellerStatus()">↻ Refresh</button>
+        </div>
+        <div class="panel-body">
+
+          <div class="loader-status-box" id="resellerStatusBox">
+            <span style="color:var(--muted);">Checking status...</span>
+          </div>
+
+          <!-- Generate download link -->
+          <div class="loader-download-box" style="margin-top:20px;">
+            <div class="loader-download-title">⬇ Downloads</div>
+            <p style="font-size:11px;color:var(--muted);margin-bottom:16px;line-height:1.7;">
+              Download the files directly from here. Both loaders are served from the server.
+            </p>
+
+            <!-- Direct download buttons -->
+            <div style="margin-bottom:20px;">
+              <div style="background:rgba(6,182,212,0.05);border:1px solid rgba(6,182,212,0.2);border-radius:10px;padding:16px;text-align:center;">
+                <div style="font-size:22px;margin-bottom:6px;">🤝</div>
+                <div style="font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--accent3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;">Reseller Loader</div>
+                <div style="font-size:10px;color:var(--muted);margin-bottom:12px;">Your reseller copy</div>
+                <div class="form-row" style="margin-bottom:8px;">
+                  <div class="form-field"><label>Username</label><input type="text" id="resellerDlUser" placeholder="your username" /></div>
+                </div>
+                <div class="form-row" style="margin-bottom:10px;">
+                  <div class="form-field"><label>Password</label><input type="password" id="resellerDlPass" placeholder="your password" /></div>
+                </div>
+                <button class="btn btn-sm btn-cyan" style="width:100%;" onclick="downloadResellerLoader()">⬇ Download Reseller</button>
+              </div>
+            </div>
+
+            <div class="separator" style="margin:14px 0;"></div>
+
+            <div class="section-label" style="margin-bottom:8px;">🔗 Or Generate Links</div>
+            <div class="form-row" style="margin-bottom:0;">
+              <div class="form-field"><label>License Key</label><input type="text" id="resellerLinkKey" placeholder="KEY-XXXX-XXXX" /></div>
+              <div class="form-field"><label>HWID</label><input type="text" id="resellerLinkHwid" placeholder="Hardware ID" /></div>
+              <button class="btn btn-sm btn-cyan" onclick="genResellerDownloadLink()" style="align-self:flex-end;">Generate</button>
+            </div>
+            <div class="dl-link-box" id="resellerDlLinkResult" onclick="copyResellerDlLink()" title="Click to copy"></div>
+            <p id="resellerDlLinkHint" style="display:none;font-size:10px;color:var(--muted);margin-top:6px;">Click the link above to copy it.</p>
+          </div>
+
+        </div>
+      </div>
+
       <!-- HWID RESET REQUESTS -->
       <div class="panel" id="panel-hwid-resets">
         <div class="panel-header">
@@ -1417,7 +1471,7 @@
 <script>
 // ── Constants — hardcoded, users only need username + password ────────────────
 const PANEL_API       = 'https://immortal1234.pythonanywhere.com';
-const PANEL_ADMIN_KEY = 'TPDSQ+D43223432';
+const PANEL_ADMIN_KEY = 'HSkTJvob7LDC6u';
 
 const LS_USER    = 'immortal_panel_user';
 const LS_PASS    = 'immortal_panel_pass';
@@ -1505,6 +1559,17 @@ window.addEventListener('DOMContentLoaded', () => {
     if (file) { document.getElementById('loaderFileInput').files = e.dataTransfer.files; onFileSelected({ files: e.dataTransfer.files }); }
   });
 
+  const rdz = document.getElementById('resellerDropZone');
+  if (rdz) {
+    rdz.addEventListener('dragover',  e => { e.preventDefault(); rdz.classList.add('drag-over'); });
+    rdz.addEventListener('dragleave', () => rdz.classList.remove('drag-over'));
+    rdz.addEventListener('drop', e => {
+      e.preventDefault(); rdz.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) { document.getElementById('resellerFileInput').files = e.dataTransfer.files; onResellerFileSelected({ files: e.dataTransfer.files }); }
+    });
+  }
+
   updateGenPreview();
 });
 
@@ -1517,12 +1582,12 @@ async function autoLogin(username, password) {
     const d = await r.json();
     if (!d.valid) {
       if (d.error && d.error.includes('pending')) { showPending(username); return; }
-      return; // wrong password or denied — stay on login
+      return;
     }
     const stats = await fetch(`${PANEL_API}/stats?admin_key=${encodeURIComponent(PANEL_ADMIN_KEY)}`);
     const sd    = await stats.json();
     if (sd.error) return;
-    enterApp(sd);
+    enterApp(sd, !!d.is_reseller, d.tab_mode || 'all');
   } catch {}
 }
 
@@ -1558,33 +1623,77 @@ async function attemptLogin() {
 
     localStorage.setItem(LS_USER, username);
     localStorage.setItem(LS_PASS, password);
-    enterApp(statsData);
+    enterApp(statsData, !!panelData.is_reseller, panelData.tab_mode || 'all');
   } catch(e) {
     errEl.style.color = ''; errEl.textContent = e.message || 'Login failed.';
     errEl.style.display = 'block';
   }
 }
 
-function enterApp(statsData) {
+function enterApp(statsData, isReseller = false, tabMode = 'all') {
   document.getElementById('loginScreen').style.display  = 'none';
   document.getElementById('pendingScreen').style.display = 'none';
   document.getElementById('app').style.display          = 'block';
   document.getElementById('apiUrlDisplay').textContent   = PANEL_API.replace('https://', '');
   document.getElementById('apiUrlFull').textContent      = PANEL_API;
   applyStats(statsData);
-  loadKeys();
-  loadBlacklist();
-  loadFailTracker();
-  checkLoaderStatus();
-  loadProducts();
-  loadHwidResets('pending');
-  document.getElementById('nav-accounts').style.display     = '';
-  document.getElementById('st-accounts-card').style.display = '';
-  const thAccount = document.getElementById('th-account');
-  if (thAccount) thAccount.style.display = '';
-  setValidateMode('account');
-  const modeToggle = document.getElementById('validateModeToggle');
-  if (modeToggle) modeToggle.style.display = '';
+
+  // tab_mode: 'all' | 'reseller_only' | 'admin_only'
+  const showAdmin    = (tabMode === 'all' || tabMode === 'admin_only');
+  const showReseller = (tabMode === 'all' || tabMode === 'reseller_only') && isReseller;
+
+  // Admin tabs — hide entire nav sections if reseller_only
+  const adminNavSections = ['nav-keys','nav-special','nav-accounts','nav-generator','nav-products','nav-loader','nav-blacklist','nav-hwid-resets','nav-logs','nav-validate'];
+  adminNavSections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.closest('.nav-item').style.display = showAdmin ? '' : 'none';
+  });
+
+  // Also hide the section labels if reseller_only
+  document.querySelectorAll('.nav-section').forEach(section => {
+    const items = section.querySelectorAll('.nav-item');
+    const anyVisible = Array.from(items).some(i => i.style.display !== 'none');
+    const label = section.querySelector('.nav-label');
+    if (label) label.style.display = anyVisible ? '' : 'none';
+  });
+
+  // Reseller tab
+  const resellerNav = document.getElementById('nav-reseller');
+  if (resellerNav) resellerNav.style.display = showReseller ? '' : 'none';
+
+  // Stats grid — hide if reseller_only
+  const statsGrid = document.getElementById('statsGrid');
+  if (statsGrid) statsGrid.style.display = showAdmin ? '' : 'none';
+
+  // API bar — hide if reseller_only
+  const apiBar = document.querySelector('.api-bar');
+  if (apiBar) apiBar.style.display = showAdmin ? '' : 'none';
+
+  if (showAdmin) {
+    loadKeys();
+    loadBlacklist();
+    loadFailTracker();
+    checkLoaderStatus();
+    loadProducts();
+    loadHwidResets('pending');
+    document.getElementById('nav-accounts').style.display     = '';
+    document.getElementById('st-accounts-card').style.display = '';
+    const thAccount = document.getElementById('th-account');
+    if (thAccount) thAccount.style.display = '';
+    setValidateMode('account');
+    const modeToggle = document.getElementById('validateModeToggle');
+    if (modeToggle) modeToggle.style.display = '';
+  }
+
+  if (showReseller) {
+    checkResellerStatus();
+    loadResellers();
+  }
+
+  // Default tab: reseller_only users land on reseller tab, others on dashboard
+  if (tabMode === 'reseller_only' && showReseller) {
+    showTab('reseller');
+  }
 }
 
 function logout() {
@@ -1637,6 +1746,7 @@ function showTab(tab) {
   if (tab === 'products')    loadProducts();
   if (tab === 'blacklist')   { loadBlacklist(); loadFailTracker(); }
   if (tab === 'loader')      checkLoaderStatus();
+  if (tab === 'reseller')    { checkResellerStatus(); loadResellers(); }
   if (tab === 'hwid-resets') loadHwidResets('pending');
 }
 
@@ -2414,6 +2524,150 @@ async function handleHwidReset(requestId, action) {
   toast(data.message || `Request ${action}d`, action === 'approve' ? 'success' : 'info');
   loadHwidResets('pending');
   refreshAll();
+}
+
+// ── Reseller ──────────────────────────────────────────────────────────────────
+
+function onResellerFileSelected(input) {
+  const file  = input.files && input.files[0];
+  const label = document.getElementById('resellerDzLabel');
+  if (file) { label.className = 'dz-file'; label.textContent = `${file.name}  (${(file.size/1048576).toFixed(2)} MB)`; }
+  else      { label.className = 'dz-label'; label.textContent = 'Drop reseller file here, or click to browse'; }
+}
+
+function clearResellerFileSelection() {
+  document.getElementById('resellerFileInput').value = '';
+  onResellerFileSelected({ files: [] });
+}
+
+async function checkResellerStatus() {
+  const box   = document.getElementById('resellerStatusBox');
+  const badge = document.getElementById('navResellerBadge');
+  if (!box) return;
+  try {
+    const data = await api('/reseller_status');
+    if (data.exists) {
+      const mb  = (data.size_bytes / 1048576).toFixed(2);
+      const mod = data.last_modified ? data.last_modified.substring(0,19).replace('T',' ') : '—';
+      box.innerHTML = `<span style="color:var(--green);font-weight:700;font-family:'Syne',sans-serif;">✓ Reseller file ready</span>
+        <span style="color:var(--muted);">│</span>
+        <span style="color:var(--text);">${data.filename}</span>
+        <span style="color:var(--muted);">${mb} MB │ Modified: ${mod}</span>`;
+      badge.style.display = '';
+    } else {
+      box.innerHTML = `<span style="color:var(--red);font-weight:700;font-family:'Syne',sans-serif;">✕ No reseller file on server</span>
+        <span style="color:var(--muted);">Upload one below.</span>`;
+      badge.style.display = 'none';
+    }
+  } catch { box.innerHTML = `<span style="color:var(--red);">Failed to fetch reseller file status.</span>`; }
+}
+
+async function uploadResellerFile() {
+  const fileInput = document.getElementById('resellerFileInput');
+  if (!fileInput.files || !fileInput.files.length) return toast('Select a reseller file first', 'error');
+  const file = fileInput.files[0];
+  const allowed = ['.exe','.rar','.zip','.7z','.tar','.gz','.apk','.dmg','.pkg'];
+  if (!allowed.some(e => file.name.toLowerCase().endsWith(e))) return toast(`Allowed: ${allowed.join(', ')}`, 'error');
+
+  const wrap = document.getElementById('resellerProgressWrap');
+  const bar  = document.getElementById('resellerProgressBar');
+  const lbl  = document.getElementById('resellerProgressLabel');
+  wrap.style.display = 'block'; bar.style.width = '0%';
+  lbl.textContent = `Uploading ${file.name}...`;
+
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${PANEL_API}/upload_reseller?admin_key=${encodeURIComponent(PANEL_ADMIN_KEY)}`);
+      xhr.upload.addEventListener('progress', e => {
+        if (e.lengthComputable) { const p = Math.round(e.loaded/e.total*100); bar.style.width=`${p}%`; lbl.textContent=`Uploading... ${p}%`; }
+      });
+      xhr.onload = () => { try { const d=JSON.parse(xhr.responseText); d.error?reject(new Error(d.error)):resolve(d); } catch { reject(new Error(`HTTP ${xhr.status}`)); } };
+      xhr.onerror = () => reject(new Error('Network error')); xhr.timeout = 0; xhr.send(fd);
+    });
+    bar.style.width = '100%'; lbl.textContent = 'Upload complete!';
+    setTimeout(() => { wrap.style.display = 'none'; }, 1500);
+    toast('Reseller file uploaded!', 'success');
+    clearResellerFileSelection(); checkResellerStatus();
+  } catch(err) { wrap.style.display = 'none'; toast(err.message || 'Upload failed', 'error'); }
+}
+
+async function loadResellers() {
+  const data  = await api('/list_resellers');
+  const tbody = document.getElementById('resellerTable');
+  if (!tbody) return;
+  if (!data.resellers || data.resellers.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="3"><div class="empty"><div class="icon">🤝</div>No resellers approved</div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = data.resellers.map(r => `<tr>
+    <td style="color:var(--accent2);font-size:12px;">@${escapeHtml(r.username)}</td>
+    <td>${r.exists ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-red">Missing</span>'}</td>
+    <td><button class="btn btn-sm btn-danger" onclick="revokeReseller('${escapeHtml(r.username)}')">Revoke</button></td>
+  </tr>`).join('');
+}
+
+async function addReseller() {
+  const u = document.getElementById('resellerUsername').value.trim();
+  if (!u) return toast('Enter a username', 'error');
+  const data = await api('/set_reseller', 'POST', { username: u, action: 'add' });
+  if (data.error) return toast(data.error, 'error');
+  toast(`${u} approved as reseller`, 'success');
+  document.getElementById('resellerUsername').value = '';
+  loadResellers();
+}
+
+async function removeReseller() {
+  const u = document.getElementById('resellerUsername').value.trim();
+  if (!u) return toast('Enter a username', 'error');
+  const data = await api('/set_reseller', 'POST', { username: u, action: 'remove' });
+  if (data.error) return toast(data.error, 'error');
+  toast(`${u} reseller status revoked`, 'success');
+  document.getElementById('resellerUsername').value = '';
+  loadResellers();
+}
+
+async function revokeReseller(username) {
+  if (!confirm(`Revoke reseller status for @${username}?`)) return;
+  const data = await api('/set_reseller', 'POST', { username, action: 'remove' });
+  if (data.error) return toast(data.error, 'error');
+  toast(`${username} revoked`, 'success');
+  loadResellers();
+}
+
+function genResellerDownloadLink() {
+  const key  = document.getElementById('resellerLinkKey').value.trim();
+  const hwid = document.getElementById('resellerLinkHwid').value.trim();
+  if (!key || !hwid) return toast('Key and HWID required', 'error');
+  const url = `${PANEL_API}/download?key=${encodeURIComponent(key)}&hwid=${encodeURIComponent(hwid)}`;
+  const box = document.getElementById('resellerDlLinkResult');
+  box.style.display = 'block'; box.textContent = url; box._url = url;
+  document.getElementById('resellerDlLinkHint').style.display = 'block';
+  toast('Link generated — click to copy', 'info');
+}
+
+function copyResellerDlLink() {
+  const el = document.getElementById('resellerDlLinkResult');
+  if (el._url) { navigator.clipboard.writeText(el._url); toast('Link copied!', 'success'); }
+}
+
+function downloadNormalLoader() {
+  const key  = document.getElementById('resellerDlKey').value.trim();
+  const hwid = document.getElementById('resellerDlHwid').value.trim();
+  if (!key || !hwid) return toast('Key and HWID required', 'error');
+  const url = `${PANEL_API}/download?key=${encodeURIComponent(key)}&hwid=${encodeURIComponent(hwid)}`;
+  window.location.href = url;
+  toast('Download started...', 'success');
+}
+
+function downloadResellerLoader() {
+  const user = document.getElementById('resellerDlUser').value.trim();
+  const pass = document.getElementById('resellerDlPass').value.trim();
+  if (!user || !pass) return toast('Username and password required', 'error');
+  const url = `${PANEL_API}/download_reseller?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}`;
+  window.location.href = url;
+  toast('Download started...', 'success');
 }
 
 // ── Util ──────────────────────────────────────────────────────────────────────
